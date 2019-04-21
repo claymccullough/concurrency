@@ -138,13 +138,39 @@ func Tee(done, in <-chan interface{}) (<-chan interface{}, <-chan interface{}) {
 			for i := 0; i < 2; i++ {
 				select {
 				case <-done:
-				case out1<-val:
+				case out1 <- val:
 					out1 = nil
-				case out2<-val:
+				case out2 <- val:
 					out2 = nil
 				}
 			}
 		}
 	}()
 	return out1, out2
+}
+
+func Bridge(done <-chan interface{}, chanStream <-chan <-chan interface{}) <-chan interface{} {
+	valStream := make(chan interface{})
+	go func() {
+		defer close(valStream)
+		for {
+			var stream <-chan interface{}
+			select {
+			case maybeStream, ok := <-chanStream:
+				if ok == false {
+					return
+				}
+				stream = maybeStream
+			case <-done:
+				return
+			}
+			for val := range OrDone(done, stream) {
+				select {
+				case valStream <- val:
+				case <-done:
+				}
+			}
+		}
+	}()
+	return valStream
 }
